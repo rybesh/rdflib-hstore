@@ -76,7 +76,7 @@ class HstoreStore(Store):
     def close(self, commit_pending_transaction=False):
         self.__connection.close()
 
-    def destroy(self, configuration=''):
+    def destroy(self, configuration=None):
         assert not self.closed(), 'The store must be open.'
         self.__indices = [None] * 3
         self.__indices_info = [None] * 3
