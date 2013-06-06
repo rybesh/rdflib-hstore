@@ -1,7 +1,9 @@
-*~
-*pyc
-build
-.tox
-dist
-*egg-info
-picklr.c
+.Python
+bin
+include
+lib
+man
+share
+src
+*.pyc
+*.egg-info
