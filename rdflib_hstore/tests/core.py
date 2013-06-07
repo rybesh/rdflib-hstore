@@ -6,12 +6,10 @@ import rdflib
 import psycopg2
 from psycopg2.extensions import \
     ISOLATION_LEVEL_AUTOCOMMIT, ISOLATION_LEVEL_READ_COMMITTED
-from rdflib import plugin, URIRef, Literal, BNode
+from rdflib import plugin, RDF, RDFS, URIRef, Literal, BNode, Variable
 from rdflib.store import Store
-from rdflib.graph import Graph, ConjunctiveGraph
+from rdflib.graph import Graph, ConjunctiveGraph, QuotedGraph
 
-storename = 'hstore'
-storetest = True
 connection_uri = os.environ.get(
     'DBURI',
     'postgresql://unittest@localhost/rdflibhstore_test')
@@ -516,5 +514,97 @@ class ContextTestCase(BaseCase):
         self.remove_stuff(graph)
         asserte(len(list(context1_triples((None, None, None)))), 0)
         asserte(len(list(triples((None, None, None)))), 0)
+
+
+class FormulaTestCase(BaseCase):
+
+    def open_graph(self):
+        graph = ConjunctiveGraph(store='hstore')
+        graph.open(connection_uri, create=True)
+        self.graphs.append(graph)
+        return graph
+
+    def test_n3_store(self):
+        # Thorough test suite for formula-aware store
+
+        implies = URIRef("http://www.w3.org/2000/10/swap/log#implies")
+        testN3 = """
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix : <http://test/> .
+{:a :b :c;a :foo} => {:a :d :c,?y}.
+_:foo a rdfs:Class.
+:a :d :c."""
+
+        g = self.open_graph()
+        g.parse(data=testN3, format="n3")
+
+        formulaA = BNode()
+        formulaB = BNode()
+        for s,o in g.subject_objects(predicate=implies):
+            formulaA = s
+            formulaB = o
+        assert type(formulaA)==QuotedGraph and type(formulaB)==QuotedGraph
+
+        a = URIRef('http://test/a')
+        b = URIRef('http://test/b')
+        c = URIRef('http://test/c')
+        d = URIRef('http://test/d')
+        v = Variable('y')
+        
+        universe = ConjunctiveGraph(g.store)
+        
+        # test formula as terms
+        assert len(list(universe.triples((formulaA, implies, formulaB)))) == 1
+        
+        # test variable as term and variable roundtrip
+        assert len(list(formulaB.triples((None,None,v)))) == 1
+        for s,p,o in formulaB.triples((None,d,None)):
+            if o != c:
+                assert isinstance(o, Variable)
+                assert o == v
+
+        s = list(universe.subjects(RDF.type, RDFS.Class))[0]
+        assert isinstance(s, BNode)
+        assert len(list(universe.triples((None,implies,None)))) == 1
+        assert len(list(universe.triples((None,RDF.type,None)))) == 1
+
+        assert len(list(formulaA.triples((None,RDF.type,None)))) == 1
+        assert len(list(formulaA.triples((None,None,None)))) == 2
+
+        assert len(list(formulaB.triples((None,None,None)))) == 2
+        assert len(list(formulaB.triples((None,d,None)))) == 2
+
+        assert len(list(universe.triples((None,None,None)))) == 3 
+        assert len(list(universe.triples((None,d,None)))) == 1
+        
+        # context tests
+        # test contexts with triple argument
+        assert len(list(universe.contexts((a,d,c))))==1
+        
+        # remove test cases
+        universe.remove((None,implies,None))
+        assert len(list(universe.triples((None,implies,None)))) == 0
+        assert len(list(formulaA.triples((None,None,None)))) == 2
+        assert len(list(formulaB.triples((None,None,None)))) == 2
+        
+        formulaA.remove((None,b,None))
+        assert len(list(formulaA.triples((None,None,None)))) == 1
+
+        formulaA.remove((None,RDF.type,None))
+        assert len(list(formulaA.triples((None,None,None)))) == 0
+        
+        universe.remove((None,RDF.type,RDFS.Class))
+        
+        # remove_context tests
+        universe.remove_context(formulaB)
+        assert len(list(universe.triples((None,RDF.type,None)))) == 0
+        assert len(universe) == 1
+        assert len(formulaB) == 0
+        
+        universe.remove((None,None,None))
+        assert len(universe) == 0
+
+
 
 
