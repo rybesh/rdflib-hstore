@@ -6,7 +6,7 @@ import rdflib
 import psycopg2
 from psycopg2.extensions import \
     ISOLATION_LEVEL_AUTOCOMMIT, ISOLATION_LEVEL_READ_COMMITTED
-from rdflib import plugin, URIRef, Literal
+from rdflib import plugin, URIRef, Literal, BNode
 from rdflib.store import Store
 from rdflib.graph import Graph, ConjunctiveGraph
 
@@ -29,7 +29,8 @@ says = URIRef(u'says')
 hello = Literal(u'hello', lang='en')
 konichiwa = Literal(u'こんにちは', lang='ja')
 something = Literal(u'something')        
-
+context1 = URIRef(u'context-1')
+context2 = URIRef(u'context-2')
 
 class BaseCase(unittest.TestCase):
 
@@ -56,14 +57,6 @@ class BaseCase(unittest.TestCase):
             g.close()
         self.execute('DROP')
 
-class TestHstoreGraph(BaseCase):
-
-    def open_graph(self):
-        graph = Graph(store='hstore')
-        graph.open(connection_uri, create=True)
-        self.graphs.append(graph)
-        return graph
-
     def add_stuff(self, graph):
         graph.add((tarek, likes, pizza))
         graph.add((tarek, likes, cheese))
@@ -87,6 +80,15 @@ class TestHstoreGraph(BaseCase):
         graph.remove((bob, says, hello))
         graph.remove((bob, says, konichiwa))
         graph.remove((bob, says, something))        
+
+
+class TestHstoreGraph(BaseCase):
+
+    def open_graph(self):
+        graph = Graph(store='hstore')
+        graph.open(connection_uri, create=True)
+        self.graphs.append(graph)
+        return graph
 
     def test_namespaces(self):
         graph = self.open_graph()
@@ -255,4 +257,264 @@ class TestHstoreConjunctiveGraph(BaseCase):
         graph.store.remove((michel, likes, cheese), graph.store)
         self.assertTrue(len(list(graph.triples(
             (None, None, None), context=graph.store))) == 1)
+
+
+class ContextTestCase(BaseCase):
+
+    def open_graph(self):
+        graph = ConjunctiveGraph(store='hstore')
+        graph.open(connection_uri, create=True)
+        self.graphs.append(graph)
+        return graph
+
+    def get_context(self, store, identifier):
+        assert (isinstance(identifier, URIRef) or 
+                isinstance(identifier, BNode)), type(identifier)
+        return Graph(store=store, identifier=identifier, namespace_manager=self)
+
+    def add_stuff_in_multiple_contexts(self, graph):
+        triple = (pizza, hates, tarek)
+        # add to default context
+        graph.add(triple)
+        # add to context 1
+        g1 = Graph(graph.store, context1)
+        g1.add(triple)
+        # add to context 2
+        g2 = Graph(graph.store, context2)
+        g2.add(triple)
+
+    def test_conjunction(self):
+        graph = self.open_graph()
+        self.add_stuff_in_multiple_contexts(graph)
+        triple = (pizza, likes, pizza)
+        # add to context 1
+        g1 = Graph(graph.store, context1)
+        g1.add(triple)
+        self.assertEquals(len(graph), len(g1))
+
+    def test_len_in_one_context(self):
+        graph = self.open_graph()
+        old_len = len(graph)
+        g1 = self.get_context(graph.store, context1)
+
+        for i in range(0, 10):
+            g1.add((BNode(), hates, hates))
+        self.assertEquals(len(g1), old_len + 10)
+        self.assertEquals(len(self.get_context(graph.store, context1)), old_len + 10)
+        
+        graph.remove_context(self.get_context(graph.store, context1))
+        self.assertEquals(len(graph), old_len)
+        self.assertEquals(len(g1), 0)
+
+    def test_len_in_multiple_contexts(self):
+        graph = self.open_graph()
+        old_len = len(graph)
+        self.add_stuff_in_multiple_contexts(graph)
+
+        #  add_stuff_in_multiple_contexts is adding the same triple to
+        # three different contexts. So it's only + 1
+        self.assertEquals(len(graph), old_len + 1)
+        self.assertEquals(len(self.get_context(graph.store, context1)), old_len + 1)
+
+    def test_remove_in_multiple_contexts(self):
+        graph = self.open_graph()
+        self.add_stuff_in_multiple_contexts(graph)
+
+        # triple should be still in store after removing it from context1 + context2
+        triple = (pizza, hates, tarek)
+        self.assertTrue(triple in graph)
+
+        g1 = self.get_context(graph.store, context1)
+        g1.remove(triple)
+        self.assertTrue(triple in graph)
+
+        g2 = self.get_context(graph.store, context2)
+        g2.remove(triple)
+        self.assertTrue(triple in graph)
+
+        graph.remove(triple)
+        # now gone!
+        self.assertTrue(triple not in graph)
+
+        # add again and see if remove without context removes all triples!
+        self.add_stuff_in_multiple_contexts(graph)
+        graph.remove(triple)
+        self.assertTrue(triple not in graph)
+
+    def test_contexts(self):
+        graph = self.open_graph()
+        self.add_stuff_in_multiple_contexts(graph)
+
+        self.assertTrue(
+            context1 in [g.identifier for g in graph.contexts()])
+        self.assertTrue(
+            context2 in [g.identifier for g in graph.contexts()])
+
+        triple = (pizza, hates, tarek)
+        g2 = self.get_context(graph.store, context2)
+        g2.remove(triple)
+        self.assertTrue(
+            context2 in [g.identifier for g in graph.contexts()])
+        self.assertFalse(
+            context2 in [g.identifier for g in graph.contexts(triple)])
+
+    def test_remove_context(self):
+        graph = self.open_graph()
+        self.add_stuff_in_multiple_contexts(graph)
+
+        self.assertTrue(
+            context1 in [g.identifier for g in graph.contexts()])
+        graph.remove_context(self.get_context(graph.store, context1))
+        self.assertFalse(
+            context1 in [g.identifier for g in graph.contexts()])
+
+    def test_remove_any(self):
+        graph = self.open_graph()
+        self.add_stuff_in_multiple_contexts(graph)
+        graph.remove((None,None,None))
+        self.assertEquals(len(graph), 0)
+
+    def test_triples(self):
+        graph = self.open_graph()
+        self.add_stuff(self.get_context(graph.store, context1))
+
+        asserte = self.assertEquals
+        triples = graph.triples
+        context1_triples = self.get_context(graph.store, context1).triples
+
+        # unbound subjects with context
+        asserte(len(list(context1_triples((None, likes, pizza)))), 2)
+        asserte(len(list(context1_triples((None, hates, pizza)))), 1)
+        asserte(len(list(context1_triples((None, likes, cheese)))), 3)
+        asserte(len(list(context1_triples((None, hates, cheese)))), 0)
+
+        # unbound subjects without context, same results!
+        asserte(len(list(triples((None, likes, pizza)))), 2)
+        asserte(len(list(triples((None, hates, pizza)))), 1)
+        asserte(len(list(triples((None, likes, cheese)))), 3)
+        asserte(len(list(triples((None, hates, cheese)))), 0)
+
+        # unbound objects with context
+        asserte(len(list(context1_triples((michel, likes, None)))), 2)
+        asserte(len(list(context1_triples((tarek, likes, None)))), 2)
+        asserte(len(list(context1_triples((bob, hates, None)))), 2)
+        asserte(len(list(context1_triples((bob, likes, None)))), 1)
+
+        # unbound objects without context, same results!
+        asserte(len(list(triples((michel, likes, None)))), 2)
+        asserte(len(list(triples((tarek, likes, None)))), 2)
+        asserte(len(list(triples((bob, hates, None)))), 2)
+        asserte(len(list(triples((bob, likes, None)))), 1)
+
+        # unbound predicates with context
+        asserte(len(list(context1_triples((michel, None, cheese)))), 1)
+        asserte(len(list(context1_triples((tarek, None, cheese)))), 1)
+        asserte(len(list(context1_triples((bob, None, pizza)))), 1)
+        asserte(len(list(context1_triples((bob, None, michel)))), 1)
+
+        # unbound predicates without context, same results!
+        asserte(len(list(triples((michel, None, cheese)))), 1)
+        asserte(len(list(triples((tarek, None, cheese)))), 1)
+        asserte(len(list(triples((bob, None, pizza)))), 1)
+        asserte(len(list(triples((bob, None, michel)))), 1)
+
+        # unbound subject, objects with context
+        asserte(len(list(context1_triples((None, hates, None)))), 2)
+        asserte(len(list(context1_triples((None, likes, None)))), 5)
+
+        # unbound subject, objects without context, same results!
+        asserte(len(list(triples((None, hates, None)))), 2)
+        asserte(len(list(triples((None, likes, None)))), 5)
+
+        # unbound predicates, objects with context
+        asserte(len(list(context1_triples((michel, None, None)))), 2)
+        asserte(len(list(context1_triples((bob, None, None)))), 6)
+        asserte(len(list(context1_triples((tarek, None, None)))), 2)
+
+        # unbound predicates, objects without context, same results!
+        asserte(len(list(triples((michel, None, None)))), 2)
+        asserte(len(list(triples((bob, None, None)))), 6)
+        asserte(len(list(triples((tarek, None, None)))), 2)
+
+        # unbound subjects, predicates with context
+        asserte(len(list(context1_triples((None, None, pizza)))), 3)
+        asserte(len(list(context1_triples((None, None, cheese)))), 3)
+        asserte(len(list(context1_triples((None, None, michel)))), 1)
+
+        # unbound subjects, predicates without context, same results!
+        asserte(len(list(triples((None, None, pizza)))), 3)
+        asserte(len(list(triples((None, None, cheese)))), 3)
+        asserte(len(list(triples((None, None, michel)))), 1)
+
+        # all unbound with context
+        asserte(len(list(context1_triples((None, None, None)))), 10)
+        # all unbound without context, same result!
+        asserte(len(list(triples((None, None, None)))), 10)
+
+        for c in [graph, self.get_context(graph.store, context1)]:
+            # unbound subjects
+            asserte(set(c.subjects(likes, pizza)), set((michel, tarek)))
+            asserte(set(c.subjects(hates, pizza)), set((bob,)))
+            asserte(set(c.subjects(likes, cheese)), set([tarek, bob, michel]))
+            asserte(set(c.subjects(hates, cheese)), set())
+
+            # unbound objects
+            asserte(set(c.objects(michel, likes)), set([cheese, pizza]))
+            asserte(set(c.objects(tarek, likes)), set([cheese, pizza]))
+            asserte(set(c.objects(bob, hates)), set([michel, pizza]))
+            asserte(set(c.objects(bob, likes)), set([cheese]))
+
+            # unbound predicates
+            asserte(set(c.predicates(michel, cheese)), set([likes]))
+            asserte(set(c.predicates(tarek, cheese)), set([likes]))
+            asserte(set(c.predicates(bob, pizza)), set([hates]))
+            asserte(set(c.predicates(bob, michel)), set([hates]))
+
+            asserte(set(
+                c.subject_objects(hates)), set([(bob, pizza), (bob, michel)]))
+            asserte(
+                set(c.subject_objects(likes)), set(
+                    [(tarek, cheese),
+                     (michel, cheese),
+                     (michel, pizza),
+                     (bob, cheese),
+                     (tarek, pizza)]))
+
+            asserte(set(c.predicate_objects(
+                michel)), set([(likes, cheese), (likes, pizza)]))
+            asserte(set(c.predicate_objects(bob)), set([
+                        (likes, cheese), 
+                        (hates, pizza), 
+                        (hates, michel),
+                        (says, hello),
+                        (says, konichiwa),
+                        (says, something),
+                        ]))
+            asserte(set(c.predicate_objects(
+                tarek)), set([(likes, cheese), (likes, pizza)]))
+
+            asserte(set(c.subject_predicates(
+                pizza)), set([(bob, hates), (tarek, likes), (michel, likes)]))
+            asserte(set(c.subject_predicates(cheese)), set([(
+                bob, likes), (tarek, likes), (michel, likes)]))
+            asserte(set(c.subject_predicates(michel)), set([(bob, hates)]))
+
+            asserte(set(c), set(
+                [(bob, hates, michel),
+                 (bob, likes, cheese),
+                 (tarek, likes, pizza),
+                 (michel, likes, pizza),
+                 (michel, likes, cheese),
+                 (bob, hates, pizza),
+                 (tarek, likes, cheese),
+                 (bob, says, hello),
+                 (bob, says, konichiwa),
+                 (bob, says, something),
+                 ]))
+
+        # remove stuff and make sure the graph is empty again
+        self.remove_stuff(graph)
+        asserte(len(list(context1_triples((None, None, None)))), 0)
+        asserte(len(list(triples((None, None, None)))), 0)
+
 

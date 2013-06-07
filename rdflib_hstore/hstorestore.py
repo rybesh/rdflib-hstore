@@ -171,7 +171,7 @@ class HstoreStore(Store):
 
             if context is not None:
                 if subject is None and predicate is None and object is None:
-                    del self.__contexts[_to_string(context)]
+                    del self.__contexts[self._to_string(context)]
 
     def triples(self, (subject, predicate, object), context=None):
         """A generator over all the triples matching """
@@ -197,9 +197,9 @@ class HstoreStore(Store):
         else:
             prefix = u"{}^".format(self._to_string(context))
 
-        return len(takewhile(
+        return len(list(takewhile(
                 lambda k: k.startswith(prefix), 
-                range_iter(self.__indices[0], prefix, include_value=False)))
+                range_iter(self.__indices[0], prefix, include_value=False))))
 
     def bind(self, prefix, namespace):
         bound_prefix = self.__prefix.get(namespace, None)
@@ -230,7 +230,7 @@ class HstoreStore(Store):
                         yield self._from_string(c)
         else:
             for k in range_iter(self.__contexts, include_value=False):
-                yield _from_string(k)
+                yield self._from_string(k)
 
     #@lru_cache(5000)
     #@lfu_cache(5000)
