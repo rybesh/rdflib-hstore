@@ -16,6 +16,8 @@ connection_uri = os.environ.get(
     'DBURI',
     'postgresql://unittest@localhost/rdflibhstore_test')
 
+alice = URIRef("alice")
+bob = URIRef("bob")
 michel = URIRef(u'michel')
 tarek = URIRef(u'tarek')
 bob = URIRef(u'bob')
@@ -155,18 +157,57 @@ class TestHstoreGraph(BaseCase):
         self.remove_stuff(graph)
         asserte(len(list(graph.triples((None, None, None)))), 0)
 
+    def test_statement_node(self):
+        from rdflib import RDF
+        from rdflib.term import Statement
+
+        graph = self.open_graph()
+        c = URIRef("http://example.org/foo#c")
+        r = URIRef("http://example.org/foo#r")
+        s = Statement((michel, likes, pizza), c)
+        graph.add((s, RDF.value, r))
+        self.assertEquals(r, graph.value(s, RDF.value))
+        self.assertEquals(s, graph.value(predicate=RDF.value, object=r))
+
+    def test_connected(self):
+        graph = self.open_graph()
+        self.add_stuff(graph)
+        self.assertEquals(True, graph.connected())
+
+        jeroen = URIRef("jeroen")
+        unconnected = URIRef("unconnected")
+        graph.add((jeroen, likes, unconnected))
+        self.assertEquals(False, graph.connected())
+
+    def test_graph_value(self):
+        from rdflib import RDF
+        from rdflib.graph import GraphValue
+        
+        graph = self.open_graph()
+
+        g1 = Graph()
+        g1.add((alice, likes, pizza))
+        g1.add((bob, likes, cheese))
+        g1.add((bob, likes, pizza))
+
+        g2 = Graph()
+        g2.add((bob, likes, pizza))
+        g2.add((bob, likes, cheese))
+        g2.add((alice, likes, pizza))
+
+        gv1 = GraphValue(store=graph.store, graph=g1)
+        gv2 = GraphValue(store=graph.store, graph=g2)
+        graph.add((gv1, RDF.value, gv2))
+        self.assertEquals(gv2, graph.value(gv1))
+
+        graph.remove((gv1, RDF.value, gv2))
+
     def test_reopening_db(self):
         graph = self.open_graph()
-        michel = rdflib.URIRef(u'michel')
-        likes = rdflib.URIRef(u'likes')
-        pizza = rdflib.URIRef(u'pizza')
-        cheese = rdflib.URIRef(u'cheese')
-        graph.add((michel, likes, pizza))
-        graph.add((michel, likes, cheese))
+        self.add_stuff(graph)
         graph.store.close()
         graph.store.open(connection_uri, create=False)
-        ntriples = graph.triples((None, None, None))
-        self.assertTrue(len(list(ntriples)) == 2)
+        self.assertTrue(len(list(graph.triples((None, None, None)))) == 10)
 
     def test_opening_missing_db(self):
         with self.assertRaises(StandardError):
