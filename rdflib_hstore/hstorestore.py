@@ -24,6 +24,7 @@ class HstoreStore(Store):
     context_aware = True
     formula_aware = True
     transaction_aware = False
+    batch_unification = False
 
     def __init__(self, configuration=None, identifier=None):
         self._terms = 0
