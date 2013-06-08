@@ -37,17 +37,17 @@ class PerformanceTestCase(BaseCase):
     def test_2ktriples(self):
         print '2ktriples', self.parse('2ktriples')
 
-    # def test_3ktriples(self):
-    #     print '3ktriples', self.parse('3ktriples')
+    def test_3ktriples(self):
+        print '3ktriples', self.parse('3ktriples')
 
-    # def test_5ktriples(self):
-    #     print '5ktriples', self.parse('5ktriples')
+    def test_5ktriples(self):
+        print '5ktriples', self.parse('5ktriples')
 
-    # def test_10ktriples(self):
-    #     print '10ktriples', self.parse('10ktriples')
+    def test_10ktriples(self):
+        print '10ktriples', self.parse('10ktriples')
 
-    # def test_25ktriples(self):
-    #     print '25ktriples', self.parse('25ktriples')
+    def test_25ktriples(self):
+        print '25ktriples', self.parse('25ktriples')
 
     # def test_50ktriples(self):
     #     print '50ktriples', self.parse('50ktriples')
@@ -68,7 +68,7 @@ class PerformanceTestCase(BaseCase):
                 for t in graph.triples((s,None,None)):
                     pass
 
-        iterations = 5
+        iterations = 1
         elapsed = 0.0
         for i in range(iterations):
             print dataset, 'iteration', i+1
