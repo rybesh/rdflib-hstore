@@ -12,13 +12,12 @@ and a LevelDB one by Gunnar Grimnes.
 
 import hstore
 import psycopg2
+from bisect import bisect_left
+from itertools import takewhile
+#from lru import lru_cache, lfu_cache
 from rdflib import URIRef
 from rdflib.store import Store
 from rdflib.store import VALID_STORE
-from bisect import bisect_left
-from itertools import takewhile
-
-#from lru import lru_cache, lfu_cache
 
 class HstoreStore(Store):
     context_aware = True
@@ -75,17 +74,22 @@ class HstoreStore(Store):
         return VALID_STORE
 
     def close(self, commit_pending_transaction=False):
+        [ i.sync() for i in self.__indices ]
+        self.__contexts.sync()
+        self.__namespace.sync()
+        self.__prefix.sync()
+        self.__i2k.sync()
+        self.__k2i.sync()
         self.__connection.close()
 
     def destroy(self, configuration=None):
         assert not self.closed(), 'The store must be open.'
-        self.__indices = [None] * 3
-        self.__indices_info = [None] * 3
-        self.__contexts = None
-        self.__namespace = None
-        self.__prefix = None
-        self.__i2k = None
-        self.__k2i = None
+        [ i.destroy() for i in self.__indices ]
+        self.__contexts.destroy()
+        self.__namespace.destroy()
+        self.__prefix.destroy()
+        self.__i2k.destroy()
+        self.__k2i.destroy()
 
     def add(self, (subject, predicate, object), context, quoted=False):
         assert not self.closed(), 'The store must be open.'
@@ -133,7 +137,8 @@ class HstoreStore(Store):
                     i[_to_key((s, p, o), u"")] = contexts_value
             else:
                 for i, _to_key, _from_key in self.__indices_info:
-                    del i[_to_key((s, p, o), u"")]
+                    k = _to_key((s, p, o), u"")
+                    if k in i: del i[k]
 
     def remove(self, (subject, predicate, object), context):
         assert not self.closed(), "The Store must be open."
@@ -172,7 +177,9 @@ class HstoreStore(Store):
 
             if context is not None:
                 if subject is None and predicate is None and object is None:
-                    del self.__contexts[self._to_string(context)]
+                    s = self._to_string(context)
+                    if s in self.__contexts:
+                        del self.__contexts[s]
 
     def triples(self, (subject, predicate, object), context=None):
         """A generator over all the triples matching """
