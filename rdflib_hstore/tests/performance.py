@@ -40,14 +40,14 @@ class PerformanceTestCase(BaseCase):
     def test_3ktriples(self):
         print '3ktriples', self.parse('3ktriples')
 
-    def test_5ktriples(self):
-        print '5ktriples', self.parse('5ktriples')
+    # def test_5ktriples(self):
+    #     print '5ktriples', self.parse('5ktriples')
 
-    def test_10ktriples(self):
-        print '10ktriples', self.parse('10ktriples')
+    # def test_10ktriples(self):
+    #     print '10ktriples', self.parse('10ktriples')
 
-    def test_25ktriples(self):
-        print '25ktriples', self.parse('25ktriples')
+    # def test_25ktriples(self):
+    #     print '25ktriples', self.parse('25ktriples')
 
     # def test_50ktriples(self):
     #     print '50ktriples', self.parse('50ktriples')
@@ -58,7 +58,6 @@ class PerformanceTestCase(BaseCase):
         
         data = Graph()
         path = os.path.dirname(os.path.realpath(__file__))
-        print 'parsing', dataset
         data.parse(location='{}/data/{}.n3'.format(path, dataset), format='n3')
         
         def add_and_iterate(data, graph):
@@ -68,10 +67,9 @@ class PerformanceTestCase(BaseCase):
                 for t in graph.triples((s,None,None)):
                     pass
 
-        iterations = 1
+        iterations = 5
         elapsed = 0.0
         for i in range(iterations):
-            print dataset, 'iteration', i+1
             t = time()
             add_and_iterate(data, graph)
             elapsed += (time() - t)

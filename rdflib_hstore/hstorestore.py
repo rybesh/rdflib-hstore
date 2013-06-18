@@ -14,7 +14,7 @@ import hstore
 import psycopg2
 from bisect import bisect_left
 from itertools import takewhile
-#from lru import lru_cache, lfu_cache
+from lru import lru_cache, lfu_cache
 from rdflib import URIRef
 from rdflib.store import Store
 from rdflib.store import VALID_STORE
@@ -240,8 +240,8 @@ class HstoreStore(Store):
             for k in range_iter(self.__contexts, include_value=False):
                 yield self._from_string(k)
 
-    #@lru_cache(5000)
-    #@lfu_cache(5000)
+    @lru_cache(5000)
+    @lfu_cache(5000)
     def _from_string(self, i):
         """rdflib term from index number (as a string)"""
         k = self.__i2k.get(i, None)
@@ -249,8 +249,8 @@ class HstoreStore(Store):
             raise Exception('Key for {} is None'.format(i))
         return self.node_pickler.loads(k)
 
-    #@lru_cache(5000)
-    #@lfu_cache(5000)
+    @lru_cache(5000)
+    @lfu_cache(5000)
     def _to_string(self, term):
         """index number (as a string) from rdflib term"""
         k = self.node_pickler.dumps(term)
